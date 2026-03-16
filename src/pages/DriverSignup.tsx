@@ -5,6 +5,7 @@ type Availability = "unavailable" | "available" | "preferred";
 type MapPoint = { x: number; y: number };
 
 type SignupPayload = {
+  action: "submitSignup";
   deliveryDate: string;
   city: City;
   driverId: string;
@@ -22,8 +23,7 @@ type SignupPayload = {
   previewImage: string;
 };
 
-const APPS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxzpxaYr9nYe7FaTNiqV0PazRfBQW309RAlCBOrIzfO7TjPLuIolvArTkb7hApmmQOM-w/exec";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -35,18 +35,18 @@ const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
-  "New Warehouse location: 4b Rosebank Ave, Clayton South. Admin: Allen. Open at 6:30 from Tuesday to Saturday.";
+  "Please check the reward colors carefully before choosing your area.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
+const DATE_EDIT_PASSWORD = "micro2026";
 
 function getDefaultTargetDate(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d;
+  return new Date();
 }
 
 function getQueryParams() {
   const params = new URLSearchParams(window.location.search);
   return {
+    missionId: params.get("missionId") ?? "",
     deliveryDate: params.get("deliveryDate") ?? "",
     city: params.get("city") ?? "",
     mapImage: params.get("mapImage") ?? "",
@@ -150,7 +150,6 @@ function StaticMapSelector({
   setCoreRadius,
   extendRadius,
   setExtendRadius,
-  captureRef,
 }: {
   imageUrl: string;
   point: MapPoint;
@@ -159,7 +158,6 @@ function StaticMapSelector({
   setCoreRadius: (value: number) => void;
   extendRadius: number;
   setExtendRadius: (value: number) => void;
-  captureRef: React.RefObject<HTMLDivElement>;
 }) {
   const mapRef = useRef<HTMLButtonElement | null>(null);
   const [mapSize, setMapSize] = useState({ width: 320, height: 240 });
@@ -209,70 +207,69 @@ function StaticMapSelector({
           Tap the latest reward map to choose your area.
         </div>
 
-        <div ref={captureRef} style={{ position: "relative" }}>
-          <button
-            type="button"
-            ref={mapRef}
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const x = sanitizePoint(((e.clientX - rect.left) / rect.width) * 100);
-              const y = sanitizePoint(((e.clientY - rect.top) / rect.height) * 100);
-              setPoint({ x, y });
+        <button
+          type="button"
+          ref={mapRef}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = sanitizePoint(((e.clientX - rect.left) / rect.width) * 100);
+            const y = sanitizePoint(((e.clientY - rect.top) / rect.height) * 100);
+            setPoint({ x, y });
+          }}
+          style={{
+            position: "relative",
+            display: "block",
+            width: "100%",
+            background: "#f1f5f9",
+            border: "none",
+            padding: 0,
+            cursor: "crosshair",
+          }}
+        >
+          <img
+            src={imageUrl}
+            alt="Latest reward map"
+            crossOrigin="anonymous"
+            style={{ display: "block", width: "100%", height: "auto" }}
+            onLoad={() => {
+              if (!mapRef.current) return;
+              const rect = mapRef.current.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                setMapSize({ width: rect.width, height: rect.height });
+              }
             }}
-            style={{
-              position: "relative",
-              display: "block",
-              width: "100%",
-              background: "#f1f5f9",
-              border: "none",
-              padding: 0,
-              cursor: "crosshair",
-            }}
-          >
-            <img
-              src={imageUrl}
-              alt="Latest reward map"
-              style={{ display: "block", width: "100%", height: "auto" }}
-              onLoad={() => {
-                if (!mapRef.current) return;
-                const rect = mapRef.current.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  setMapSize({ width: rect.width, height: rect.height });
-                }
-              }}
-            />
+          />
 
-            <svg
-              style={{
-                pointerEvents: "none",
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-              }}
-              viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
-              preserveAspectRatio="none"
-            >
-              <circle
-                cx={cx}
-                cy={cy}
-                r={extendPx}
-                fill="none"
-                stroke="#94a3b8"
-                strokeWidth="3"
-                strokeDasharray="10 8"
-              />
-              <circle
-                cx={cx}
-                cy={cy}
-                r={corePx}
-                fill="none"
-                stroke="#0f172a"
-                strokeWidth="4"
-              />
-            </svg>
-          </button>
-        </div>
+          <svg
+            style={{
+              pointerEvents: "none",
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+            }}
+            viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
+            preserveAspectRatio="none"
+          >
+            <circle
+              cx={cx}
+              cy={cy}
+              r={extendPx}
+              fill="none"
+              stroke="#94a3b8"
+              strokeWidth="3"
+              strokeDasharray="10 8"
+            />
+            <circle
+              cx={cx}
+              cy={cy}
+              r={corePx}
+              fill="none"
+              stroke="#0f172a"
+              strokeWidth="4"
+            />
+          </svg>
+        </button>
       </div>
 
       <div
@@ -356,16 +353,85 @@ function StaticMapSelector({
   );
 }
 
+async function generateMapPreviewImage(
+  imageUrl: string,
+  point: { x: number; y: number },
+  coreRadius: number,
+  extendRadius: number
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        const maxWidth = 420;
+        const scale = maxWidth / img.width;
+        const width = maxWidth;
+        const height = Math.round(img.height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Canvas context not available"));
+          return;
+        }
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const cx = (point.x / 100) * width;
+        const cy = (point.y / 100) * height;
+
+        const base = Math.min(width, height);
+        const corePx = ((base * coreRadius) / 100) / 2;
+        const extendPx = ((base * extendRadius) / 100) / 2;
+
+        ctx.beginPath();
+        ctx.setLineDash([10, 8]);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#94a3b8";
+        ctx.arc(cx, cy, extendPx, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.setLineDash([]);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "#0f172a";
+        ctx.arc(cx, cy, corePx, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+        resolve(dataUrl);
+      } catch (err) {
+        reject(err);
+      }
+    };
+
+    img.onerror = () => reject(new Error("Failed to load map image for preview"));
+    img.src = imageUrl;
+  });
+}
+
 export default function DriverSignup() {
   const query = useMemo(() => getQueryParams(), []);
-  const targetDate = useMemo(
+  const initialTargetDate = useMemo(
     () => getTargetDateFromQuery(query.deliveryDate),
     [query.deliveryDate]
   );
+
+  const [targetDate, setTargetDate] = useState<Date>(initialTargetDate);
   const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
   const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
+
   const defaultCity = useMemo(() => normalizeCity(query.city), [query.city]);
-  const mapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
+  const [embeddedMapImage, setEmbeddedMapImage] = useState(
+    normalizeImage(query.mapImage)
+  );
   const adminNotice = useMemo(
     () => normalizeNotice(decodeURIComponent(query.notice || "")),
     [query.notice]
@@ -382,53 +448,32 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const captureRef = useRef<HTMLDivElement>(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [embeddedMapImage, setEmbeddedMapImage] = useState(mapImage);
+  const [dateEditMode, setDateEditMode] = useState(false);
 
   useEffect(() => {
-    const embedImage = async () => {
-      try {
-        setMapReady(false);
+    const normalized = normalizeImage(query.mapImage);
+    setEmbeddedMapImage(normalized);
+  }, [query.mapImage]);
 
-        const res = await fetch(mapImage, { cache: "no-store" });
-        const blob = await res.blob();
+  const moveDateByDays = (days: number) => {
+    setTargetDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + days);
+      return next;
+    });
+  };
 
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === "string") {
-            setEmbeddedMapImage(reader.result);
-            setMapReady(true);
-          }
-        };
-        reader.readAsDataURL(blob);
-      } catch (err) {
-        console.error("Failed to embed map image:", err);
-        setEmbeddedMapImage(mapImage);
-        setMapReady(true);
-      }
-    };
+  const tryUnlockDateEdit = () => {
+    const input = window.prompt("Enter password to edit the date");
+    if (input === null) return;
 
-    if (mapImage) {
-      embedImage();
+    if (input === DATE_EDIT_PASSWORD) {
+      setDateEditMode(true);
+      alert("Date edit unlocked.");
+      return;
     }
-  }, [mapImage]);
-  
-  const payloadBase = {
-    deliveryDate: deliveryDateIso,
-    city,
-    driverId,
-    availability,
-    maxLoad,
-    vehicleTypes,
-    area: {
-      point,
-      coreRadius,
-      extendRadius,
-    },
-    mapImage,
-    adminNotice,
-    notes,
+
+    alert("Incorrect password.");
   };
 
   const toggleVehicle = (type: string) => {
@@ -451,8 +496,10 @@ export default function DriverSignup() {
     setCoreRadius(DEFAULT_CORE_RADIUS);
     setExtendRadius(DEFAULT_EXTEND_RADIUS);
     setNotes("");
+    setTargetDate(initialTargetDate);
     setSubmitted(false);
     setSubmitting(false);
+    setDateEditMode(false);
   };
 
   const handleSubmit = async () => {
@@ -469,54 +516,54 @@ export default function DriverSignup() {
     setSubmitting(true);
 
     try {
-    const previewImage = await generateMapPreviewImage(
-      embeddedMapImage || mapImage,
-      point,
-      coreRadius,
-      extendRadius
-    );
-
-    const payload = {
-      action: "submitSignup",
-      deliveryDate: missionDeliveryDate || deliveryDateIso,
-      city: missionCity || city,
-      driverId,
-      availability,
-      maxLoad,
-      vehicleTypes,
-      area: {
+      const previewImage = await generateMapPreviewImage(
+        embeddedMapImage,
         point,
         coreRadius,
-        extendRadius,
-      },
-      mapImage: embeddedMapImage || mapImage,
-      adminNotice: missionNotice || adminNotice,
-      notes,
-      previewImage,
-    };
+        extendRadius
+      );
 
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8",
-      },
-      body: JSON.stringify(payload),
-    });
+      const payload: SignupPayload = {
+        action: "submitSignup",
+        deliveryDate: deliveryDateIso,
+        city,
+        driverId,
+        availability,
+        maxLoad,
+        vehicleTypes,
+        area: {
+          point,
+          coreRadius,
+          extendRadius,
+        },
+        mapImage: embeddedMapImage,
+        adminNotice,
+        notes,
+        previewImage,
+      };
 
-    const result = await res.json();
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify(payload),
+      });
 
-    if (!result.ok) {
-      throw new Error(result.error || "Submit failed");
+      const result = await res.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Submit failed");
+      }
+
+      setSubmitted(true);
+    } catch (err) {
+      console.error(err);
+      alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSubmitting(false);
     }
-
-    setSubmitted(true);
-  } catch (err) {
-    console.error(err);
-    alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
 
   if (submitted) {
     return (
@@ -626,16 +673,72 @@ export default function DriverSignup() {
           >
             <div
               style={{
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: "0.18em",
+                display: "grid",
+                gridTemplateColumns: "52px 1fr 52px",
+                alignItems: "center",
+                gap: 8,
               }}
             >
-              DELIVERY DATE
+              <button
+                type="button"
+                onClick={() => moveDateByDays(-1)}
+                style={{
+                  height: 42,
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "white",
+                  fontSize: 22,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                -
+              </button>
+
+              <button
+                type="button"
+                onClick={tryUnlockDateEdit}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "white",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: "0.18em",
+                  }}
+                >
+                  DELIVERY DATE
+                </div>
+                <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
+                  {targetDateText}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => moveDateByDays(1)}
+                style={{
+                  height: 42,
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  background: "rgba(255,255,255,0.12)",
+                  color: "white",
+                  fontSize: 22,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                +
+              </button>
             </div>
-            <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
-              {targetDateText}
-            </div>
+
             <div
               style={{
                 marginTop: 10,
@@ -646,8 +749,35 @@ export default function DriverSignup() {
                 fontWeight: 700,
               }}
             >
-              This form is for the date above.
+              Tap the date to unlock manual edit. Use - / + for one day change.
             </div>
+
+            {dateEditMode && (
+              <div style={{ marginTop: 10 }}>
+                <input
+                  type="date"
+                  value={deliveryDateIso}
+                  onChange={(e) => {
+                    const next = new Date(e.target.value);
+                    if (!Number.isNaN(next.getTime())) {
+                      setTargetDate(next);
+                    }
+                  }}
+                  style={{
+                    width: "100%",
+                    height: 44,
+                    borderRadius: 14,
+                    border: "1px solid rgba(255,255,255,0.35)",
+                    background: "rgba(255,255,255,0.96)",
+                    color: "#111827",
+                    padding: "0 12px",
+                    boxSizing: "border-box",
+                    fontSize: 16,
+                    fontWeight: 700,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -827,76 +957,6 @@ export default function DriverSignup() {
             </div>
           </div>
 
-          async function generateMapPreviewImage(
-            imageUrl: string,
-            point: { x: number; y: number },
-            coreRadius: number,
-            extendRadius: number
-          ): Promise<string> {
-            return new Promise((resolve, reject) => {
-              const img = new Image();
-              img.crossOrigin = "anonymous";
-
-              img.onload = () => {
-                try {
-                  const maxWidth = 420;
-                  const scale = maxWidth / img.width;
-                  const width = maxWidth;
-                  const height = Math.round(img.height * scale);
-
-                  const canvas = document.createElement("canvas");
-                  canvas.width = width;
-                  canvas.height = height;
-
-                  const ctx = canvas.getContext("2d");
-                  if (!ctx) {
-                    reject(new Error("Canvas context not available"));
-                    return;
-                  }
-
-                  // 1. 先画底图
-                  ctx.fillStyle = "#ffffff";
-                  ctx.fillRect(0, 0, width, height);
-                  ctx.drawImage(img, 0, 0, width, height);
-
-                  // 2. 计算圆心
-                  const cx = (point.x / 100) * width;
-                  const cy = (point.y / 100) * height;
-
-                  // 3. 以较短边为基准换算半径
-                  const base = Math.min(width, height);
-                  const corePx = ((base * coreRadius) / 100) / 2;
-                  const extendPx = ((base * extendRadius) / 100) / 2;
-
-                  // 4. 画外圈虚线
-                  ctx.beginPath();
-                  ctx.setLineDash([10, 8]);
-                  ctx.lineWidth = 3;
-                  ctx.strokeStyle = "#94a3b8";
-                  ctx.arc(cx, cy, extendPx, 0, Math.PI * 2);
-                  ctx.stroke();
-
-                  // 5. 画内圈实线
-                  ctx.beginPath();
-                  ctx.setLineDash([]);
-                  ctx.lineWidth = 4;
-                  ctx.strokeStyle = "#0f172a";
-                  ctx.arc(cx, cy, corePx, 0, Math.PI * 2);
-                  ctx.stroke();
-
-                  // 6. 导出小图
-                  const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
-                  resolve(dataUrl);
-                } catch (err) {
-                  reject(err);
-                }
-              };
-
-              img.onerror = () => reject(new Error("Failed to load map image for preview"));
-              img.src = imageUrl;
-            });
-          }
-          
           <StaticMapSelector
             imageUrl={embeddedMapImage}
             point={point}
@@ -905,8 +965,6 @@ export default function DriverSignup() {
             setCoreRadius={setCoreRadius}
             extendRadius={extendRadius}
             setExtendRadius={setExtendRadius}
-            captureRef={captureRef}
-            setMapReady={setMapReady}
           />
 
           <div>
