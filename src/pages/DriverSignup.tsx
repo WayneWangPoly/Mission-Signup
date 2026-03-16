@@ -143,7 +143,7 @@ function NoticeTicker({
       </div>
       <style>{`
         @keyframes marquee {
-          0% { transform: translateX(60%); }
+          0% { transform: translateX(35%); }
           100% { transform: translateX(-100%); }
         }
       `}</style>
