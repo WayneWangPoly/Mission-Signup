@@ -473,7 +473,66 @@ export default function DriverSignup() {
       setSubmitted(true);
     } catch (err) {
       console.error(err);
-      alert("Submit failed. Please try again.");
+      const handleSubmit = async () => {
+  if (!driverId.trim()) {
+    alert("Please enter Driver ID");
+    return;
+  }
+
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) {
+    alert("Apps Script URL is not configured yet.");
+    return;
+  }
+
+  setSubmitting(true);
+
+  try {
+    let previewImage = "";
+
+    if (captureRef.current) {
+      previewImage = await toJpeg(captureRef.current, {
+        quality: 0.72,
+        pixelRatio: 0.85,
+        backgroundColor: "#ffffff",
+        cacheBust: true,
+      });
+    }
+
+    const payload = {
+      ...payloadBase,
+      previewImage,
+    };
+
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const text = await res.text();
+    console.log("Apps Script raw response:", text);
+
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      throw new Error("Apps Script did not return valid JSON: " + text);
+    }
+
+    if (!result.ok) {
+      throw new Error(result.error || "Submit failed");
+    }
+
+    setSubmitted(true);
+  } catch (err) {
+    console.error(err);
+    alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    setSubmitting(false);
+  }
+};
     } finally {
       setSubmitting(false);
     }
