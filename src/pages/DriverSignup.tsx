@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { toJpeg } from "html-to-image";
 
 type City = "Adelaide" | "Melbourne" | "Brisbane";
 type Availability = "unavailable" | "available" | "preferred";
@@ -470,52 +469,54 @@ export default function DriverSignup() {
     setSubmitting(true);
 
     try {
-      let previewImage = "";
+    const previewImage = await generateMapPreviewImage(
+      embeddedMapImage || mapImage,
+      point,
+      coreRadius,
+      extendRadius
+    );
 
-      if (captureRef.current) {
-        previewImage = await toJpeg(captureRef.current, {
-          quality: 0.72,
-          pixelRatio: 0.85,
-          backgroundColor: "#ffffff",
-          cacheBust: true,
-        });
-      }
+    const payload = {
+      action: "submitSignup",
+      deliveryDate: missionDeliveryDate || deliveryDateIso,
+      city: missionCity || city,
+      driverId,
+      availability,
+      maxLoad,
+      vehicleTypes,
+      area: {
+        point,
+        coreRadius,
+        extendRadius,
+      },
+      mapImage: embeddedMapImage || mapImage,
+      adminNotice: missionNotice || adminNotice,
+      notes,
+      previewImage,
+    };
 
-      const payload: SignupPayload = {
-        ...payloadBase,
-        previewImage,
-      };
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify(payload),
+    });
 
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8",
-        },
-        body: JSON.stringify(payload),
-      });
+    const result = await res.json();
 
-      const text = await res.text();
-      console.log("Apps Script raw response:", text);
-
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch {
-        throw new Error("Apps Script did not return valid JSON: " + text);
-      }
-
-      if (!result.ok) {
+    if (!result.ok) {
       throw new Error(result.error || "Submit failed");
-      }
-
-      setSubmitted(true);
-    } catch (err) {
-      console.error(err);
-      alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setSubmitting(false);
     }
-  };
+
+    setSubmitted(true);
+  } catch (err) {
+    console.error(err);
+    alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   if (submitted) {
     return (
@@ -826,6 +827,76 @@ export default function DriverSignup() {
             </div>
           </div>
 
+          async function generateMapPreviewImage(
+            imageUrl: string,
+            point: { x: number; y: number },
+            coreRadius: number,
+            extendRadius: number
+          ): Promise<string> {
+            return new Promise((resolve, reject) => {
+              const img = new Image();
+              img.crossOrigin = "anonymous";
+
+              img.onload = () => {
+                try {
+                  const maxWidth = 420;
+                  const scale = maxWidth / img.width;
+                  const width = maxWidth;
+                  const height = Math.round(img.height * scale);
+
+                  const canvas = document.createElement("canvas");
+                  canvas.width = width;
+                  canvas.height = height;
+
+                  const ctx = canvas.getContext("2d");
+                  if (!ctx) {
+                    reject(new Error("Canvas context not available"));
+                    return;
+                  }
+
+                  // 1. 先画底图
+                  ctx.fillStyle = "#ffffff";
+                  ctx.fillRect(0, 0, width, height);
+                  ctx.drawImage(img, 0, 0, width, height);
+
+                  // 2. 计算圆心
+                  const cx = (point.x / 100) * width;
+                  const cy = (point.y / 100) * height;
+
+                  // 3. 以较短边为基准换算半径
+                  const base = Math.min(width, height);
+                  const corePx = ((base * coreRadius) / 100) / 2;
+                  const extendPx = ((base * extendRadius) / 100) / 2;
+
+                  // 4. 画外圈虚线
+                  ctx.beginPath();
+                  ctx.setLineDash([10, 8]);
+                  ctx.lineWidth = 3;
+                  ctx.strokeStyle = "#94a3b8";
+                  ctx.arc(cx, cy, extendPx, 0, Math.PI * 2);
+                  ctx.stroke();
+
+                  // 5. 画内圈实线
+                  ctx.beginPath();
+                  ctx.setLineDash([]);
+                  ctx.lineWidth = 4;
+                  ctx.strokeStyle = "#0f172a";
+                  ctx.arc(cx, cy, corePx, 0, Math.PI * 2);
+                  ctx.stroke();
+
+                  // 6. 导出小图
+                  const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+                  resolve(dataUrl);
+                } catch (err) {
+                  reject(err);
+                }
+              };
+
+              img.onerror = () => reject(new Error("Failed to load map image for preview"));
+              img.src = imageUrl;
+            });
+          }
+          
           <StaticMapSelector
             imageUrl={embeddedMapImage}
             point={point}
