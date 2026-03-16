@@ -384,7 +384,37 @@ export default function DriverSignup() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const captureRef = useRef<HTMLDivElement>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [embeddedMapImage, setEmbeddedMapImage] = useState(mapImage);
 
+  useEffect(() => {
+    const embedImage = async () => {
+      try {
+        setMapReady(false);
+
+        const res = await fetch(mapImage, { cache: "no-store" });
+        const blob = await res.blob();
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            setEmbeddedMapImage(reader.result);
+            setMapReady(true);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.error("Failed to embed map image:", err);
+        setEmbeddedMapImage(mapImage);
+        setMapReady(true);
+      }
+    };
+
+    if (mapImage) {
+      embedImage();
+    }
+  }, [mapImage]);
+  
   const payloadBase = {
     deliveryDate: deliveryDateIso,
     city,
@@ -797,7 +827,7 @@ export default function DriverSignup() {
           </div>
 
           <StaticMapSelector
-            imageUrl={mapImage}
+            imageUrl={embeddedMapImage}
             point={point}
             setPoint={setPoint}
             coreRadius={coreRadius}
@@ -805,6 +835,7 @@ export default function DriverSignup() {
             extendRadius={extendRadius}
             setExtendRadius={setExtendRadius}
             captureRef={captureRef}
+            setMapReady={setMapReady}
           />
 
           <div>
