@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toJpeg } from "html-to-image";
 
 type City = "Adelaide" | "Melbourne" | "Brisbane";
 type Availability = "unavailable" | "available" | "preferred";
@@ -19,7 +20,11 @@ type SignupPayload = {
   mapImage: string;
   adminNotice: string;
   notes: string;
+  previewImage: string;
 };
+
+const APPS_SCRIPT_URL =
+  "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -79,8 +84,9 @@ function sanitizeCoreRadius(value: number): number {
 }
 
 function sanitizeExtendRadius(value: number, coreRadius: number): number {
-  if (!Number.isFinite(value))
+  if (!Number.isFinite(value)) {
     return Math.max(DEFAULT_EXTEND_RADIUS, coreRadius + GAP_RADIUS);
+  }
   return Math.max(coreRadius + GAP_RADIUS, Math.round(value));
 }
 
@@ -145,6 +151,7 @@ function StaticMapSelector({
   setCoreRadius,
   extendRadius,
   setExtendRadius,
+  captureRef,
 }: {
   imageUrl: string;
   point: MapPoint;
@@ -153,6 +160,7 @@ function StaticMapSelector({
   setCoreRadius: (value: number) => void;
   extendRadius: number;
   setExtendRadius: (value: number) => void;
+  captureRef: React.RefObject<HTMLDivElement>;
 }) {
   const mapRef = useRef<HTMLButtonElement | null>(null);
   const [mapSize, setMapSize] = useState({ width: 320, height: 240 });
@@ -202,68 +210,70 @@ function StaticMapSelector({
           Tap the latest reward map to choose your area.
         </div>
 
-        <button
-          type="button"
-          ref={mapRef}
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const x = sanitizePoint(((e.clientX - rect.left) / rect.width) * 100);
-            const y = sanitizePoint(((e.clientY - rect.top) / rect.height) * 100);
-            setPoint({ x, y });
-          }}
-          style={{
-            position: "relative",
-            display: "block",
-            width: "100%",
-            background: "#f1f5f9",
-            border: "none",
-            padding: 0,
-            cursor: "crosshair",
-          }}
-        >
-          <img
-            src={imageUrl}
-            alt="Latest reward map"
-            style={{ display: "block", width: "100%", height: "auto" }}
-            onLoad={() => {
-              if (!mapRef.current) return;
-              const rect = mapRef.current.getBoundingClientRect();
-              if (rect.width > 0 && rect.height > 0) {
-                setMapSize({ width: rect.width, height: rect.height });
-              }
+        <div ref={captureRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            ref={mapRef}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const x = sanitizePoint(((e.clientX - rect.left) / rect.width) * 100);
+              const y = sanitizePoint(((e.clientY - rect.top) / rect.height) * 100);
+              setPoint({ x, y });
             }}
-          />
-
-          <svg
             style={{
-              pointerEvents: "none",
-              position: "absolute",
-              inset: 0,
+              position: "relative",
+              display: "block",
               width: "100%",
-              height: "100%",
+              background: "#f1f5f9",
+              border: "none",
+              padding: 0,
+              cursor: "crosshair",
             }}
-            viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
-            preserveAspectRatio="none"
           >
-            <circle
-              cx={cx}
-              cy={cy}
-              r={extendPx}
-              fill="none"
-              stroke="#94a3b8"
-              strokeWidth="3"
-              strokeDasharray="10 8"
+            <img
+              src={imageUrl}
+              alt="Latest reward map"
+              style={{ display: "block", width: "100%", height: "auto" }}
+              onLoad={() => {
+                if (!mapRef.current) return;
+                const rect = mapRef.current.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  setMapSize({ width: rect.width, height: rect.height });
+                }
+              }}
             />
-            <circle
-              cx={cx}
-              cy={cy}
-              r={corePx}
-              fill="none"
-              stroke="#0f172a"
-              strokeWidth="4"
-            />
-          </svg>
-        </button>
+
+            <svg
+              style={{
+                pointerEvents: "none",
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+              }}
+              viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
+              preserveAspectRatio="none"
+            >
+              <circle
+                cx={cx}
+                cy={cy}
+                r={extendPx}
+                fill="none"
+                stroke="#94a3b8"
+                strokeWidth="3"
+                strokeDasharray="10 8"
+              />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={corePx}
+                fill="none"
+                stroke="#0f172a"
+                strokeWidth="4"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div
@@ -372,8 +382,10 @@ export default function DriverSignup() {
   const [extendRadius, setExtendRadius] = useState<number>(DEFAULT_EXTEND_RADIUS);
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const captureRef = useRef<HTMLDivElement>(null);
 
-  const payload: SignupPayload = {
+  const payloadBase = {
     deliveryDate: deliveryDateIso,
     city,
     driverId,
@@ -411,16 +423,60 @@ export default function DriverSignup() {
     setExtendRadius(DEFAULT_EXTEND_RADIUS);
     setNotes("");
     setSubmitted(false);
+    setSubmitting(false);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!driverId.trim()) {
       alert("Please enter Driver ID");
       return;
     }
 
-    console.log("Driver signup payload:", payload);
-    setSubmitted(true);
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) {
+      alert("Apps Script URL is not configured yet.");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      let previewImage = "";
+
+      if (captureRef.current) {
+        previewImage = await toJpeg(captureRef.current, {
+          quality: 0.72,
+          pixelRatio: 0.85,
+          backgroundColor: "#ffffff",
+          cacheBust: true,
+        });
+      }
+
+      const payload: SignupPayload = {
+        ...payloadBase,
+        previewImage,
+      };
+
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await res.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Submit failed");
+      }
+
+      setSubmitted(true);
+    } catch (err) {
+      console.error(err);
+      alert("Submit failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -499,7 +555,14 @@ export default function DriverSignup() {
         }}
       >
         <div style={{ background: "white", padding: "20px 20px 16px" }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              textAlign: "center",
+            }}
+          >
             <img
               src="/microexpress-logo.png"
               alt="MicroExpress"
@@ -522,7 +585,13 @@ export default function DriverSignup() {
               color: "white",
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.18em" }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: "0.18em",
+              }}
+            >
               DELIVERY DATE
             </div>
             <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
@@ -547,7 +616,9 @@ export default function DriverSignup() {
 
         <div style={{ display: "grid", gap: 20, padding: 20 }}>
           <div>
-            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>City</label>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+              City
+            </label>
             <div
               style={{
                 display: "grid",
@@ -725,6 +796,7 @@ export default function DriverSignup() {
             setCoreRadius={setCoreRadius}
             extendRadius={extendRadius}
             setExtendRadius={setExtendRadius}
+            captureRef={captureRef}
           />
 
           <div>
@@ -752,19 +824,20 @@ export default function DriverSignup() {
           <div style={{ display: "grid", gap: 8, paddingTop: 4 }}>
             <button
               onClick={handleSubmit}
+              disabled={submitting}
               style={{
                 width: "100%",
                 height: 48,
                 borderRadius: 16,
                 border: "none",
-                background: "#111827",
+                background: submitting ? "#475569" : "#111827",
                 color: "white",
                 fontWeight: 700,
                 fontSize: 16,
-                cursor: "pointer",
+                cursor: submitting ? "not-allowed" : "pointer",
               }}
             >
-              Submit
+              {submitting ? "Submitting..." : "Submit"}
             </button>
 
             <button
