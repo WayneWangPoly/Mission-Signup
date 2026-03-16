@@ -1,45 +1,423 @@
-import { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-function getDefaultTargetDate(): string {
+type City = "Adelaide" | "Melbourne" | "Brisbane";
+type Availability = "unavailable" | "available" | "preferred";
+type MapPoint = { x: number; y: number };
+
+type SignupPayload = {
+  deliveryDate: string;
+  city: City;
+  driverId: string;
+  availability: Availability;
+  maxLoad: number;
+  vehicleTypes: string[];
+  area: {
+    point: MapPoint;
+    coreRadius: number;
+    extendRadius: number;
+  };
+  mapImage: string;
+  adminNotice: string;
+  notes: string;
+};
+
+const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
+const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
+
+const DEFAULT_CITY: City = "Melbourne";
+const DEFAULT_MAX_LOAD = 200;
+const DEFAULT_CORE_RADIUS = 18;
+const DEFAULT_EXTEND_RADIUS = 34;
+const MIN_CORE_RADIUS = 8;
+const GAP_RADIUS = 10;
+const DEFAULT_NOTICE =
+  "Please check the reward colors carefully before choosing your area.";
+const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map.png";
+
+function getDefaultTargetDate(): Date {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return d;
 }
 
 function getQueryParams() {
   const params = new URLSearchParams(window.location.search);
   return {
-    deliveryDate: params.get("deliveryDate") ?? getDefaultTargetDate(),
-    city: params.get("city") ?? "Melbourne",
-    mapImage: params.get("mapImage") ?? "/melbourne-task-base-map.png",
-    notice:
-      params.get("notice") ??
-      "Please check the reward colors carefully before choosing your area.",
+    deliveryDate: params.get("deliveryDate") ?? "",
+    city: params.get("city") ?? "",
+    mapImage: params.get("mapImage") ?? "",
+    notice: params.get("notice") ?? "",
   };
+}
+
+function getTargetDateFromQuery(raw: string): Date {
+  if (!raw) return getDefaultTargetDate();
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? getDefaultTargetDate() : parsed;
+}
+
+function formatBannerDate(date: Date): string {
+  return date.toLocaleDateString("en-AU", {
+    weekday: "long",
+    day: "2-digit",
+    month: "short",
+  }).toUpperCase();
+}
+
+function formatIsoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function sanitizeLoad(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_LOAD;
+  return Math.max(0, Math.round(value));
+}
+
+function sanitizeCoreRadius(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CORE_RADIUS;
+  return Math.max(MIN_CORE_RADIUS, Math.round(value));
+}
+
+function sanitizeExtendRadius(value: number, coreRadius: number): number {
+  if (!Number.isFinite(value))
+    return Math.max(DEFAULT_EXTEND_RADIUS, coreRadius + GAP_RADIUS);
+  return Math.max(coreRadius + GAP_RADIUS, Math.round(value));
+}
+
+function sanitizePoint(value: number): number {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, value));
+}
+
+function normalizeCity(value: string): City {
+  return cityList.includes(value as City) ? (value as City) : DEFAULT_CITY;
+}
+
+function normalizeImage(value: string): string {
+  return value.trim() || DEFAULT_MAP_IMAGE;
+}
+
+function normalizeNotice(value: string): string {
+  return value.trim() || DEFAULT_NOTICE;
+}
+
+function NoticeTicker({ text }: { text: string }) {
+  const content = `${text}   •   ${text}   •   ${text}`;
+  return (
+    <div
+      style={{
+        margin: "0 16px 16px",
+        overflow: "hidden",
+        borderRadius: 16,
+        border: "1px solid #fcd34d",
+        background: "#fcd34d",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div
+        style={{
+          whiteSpace: "nowrap",
+          padding: "10px 0",
+          fontSize: 14,
+          fontWeight: 700,
+          color: "#111827",
+          display: "inline-block",
+          animation: "marquee 18s linear infinite",
+        }}
+      >
+        {content}
+      </div>
+      <style>{`
+        @keyframes marquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function StaticMapSelector({
+  imageUrl,
+  point,
+  setPoint,
+  coreRadius,
+  setCoreRadius,
+  extendRadius,
+  setExtendRadius,
+}: {
+  imageUrl: string;
+  point: MapPoint;
+  setPoint: (value: MapPoint) => void;
+  coreRadius: number;
+  setCoreRadius: (value: number) => void;
+  extendRadius: number;
+  setExtendRadius: (value: number) => void;
+}) {
+  const mapRef = useRef<HTMLButtonElement | null>(null);
+  const [mapSize, setMapSize] = useState({ width: 320, height: 240 });
+
+  useEffect(() => {
+    const updateSize = () => {
+      if (!mapRef.current) return;
+      const rect = mapRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setMapSize({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateSize();
+    const timer = window.setTimeout(updateSize, 120);
+    window.addEventListener("resize", updateSize);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", updateSize);
+    };
+  }, []);
+
+  const cx = (mapSize.width * point.x) / 100;
+  const cy = (mapSize.height * point.y) / 100;
+  const base = Math.max(240, Math.min(mapSize.width, mapSize.height));
+  const corePx = (base * coreRadius) / 100 / 2;
+  const extendPx = (base * extendRadius) / 100 / 2;
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <div
+        style={{
+          overflow: "hidden",
+          borderRadius: 20,
+          border: "1px solid #e2e8f0",
+          background: "#fff",
+        }}
+      >
+        <div
+          style={{
+            padding: "8px 12px",
+            fontSize: 12,
+            color: "#475569",
+          }}
+        >
+          Tap the latest reward map to choose your area.
+        </div>
+
+        <button
+          type="button"
+          ref={mapRef}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = sanitizePoint(((e.clientX - rect.left) / rect.width) * 100);
+            const y = sanitizePoint(((e.clientY - rect.top) / rect.height) * 100);
+            setPoint({ x, y });
+          }}
+          style={{
+            position: "relative",
+            display: "block",
+            width: "100%",
+            background: "#f1f5f9",
+            border: "none",
+            padding: 0,
+            cursor: "crosshair",
+          }}
+        >
+          <img
+            src={imageUrl}
+            alt="Latest reward map"
+            style={{ display: "block", width: "100%", height: "auto" }}
+            onLoad={() => {
+              if (!mapRef.current) return;
+              const rect = mapRef.current.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                setMapSize({ width: rect.width, height: rect.height });
+              }
+            }}
+          />
+
+          <svg
+            style={{
+              pointerEvents: "none",
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+            }}
+            viewBox={`0 0 ${mapSize.width} ${mapSize.height}`}
+            preserveAspectRatio="none"
+          >
+            <circle
+              cx={cx}
+              cy={cy}
+              r={extendPx}
+              fill="none"
+              stroke="#94a3b8"
+              strokeWidth="3"
+              strokeDasharray="10 8"
+            />
+            <circle
+              cx={cx}
+              cy={cy}
+              r={corePx}
+              fill="none"
+              stroke="#0f172a"
+              strokeWidth="4"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            background: "#fff",
+            borderRadius: 16,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              marginBottom: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#1e293b",
+            }}
+          >
+            Preferred area size
+          </div>
+          <input
+            type="range"
+            value={coreRadius}
+            min={MIN_CORE_RADIUS}
+            max={32}
+            step={1}
+            onChange={(e) => {
+              const nextCore = sanitizeCoreRadius(Number(e.target.value));
+              setCoreRadius(nextCore);
+              setExtendRadius(sanitizeExtendRadius(extendRadius, nextCore));
+            }}
+            style={{ width: "100%" }}
+          />
+          <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+            Solid circle
+          </div>
+        </div>
+
+        <div
+          style={{
+            border: "1px solid #e2e8f0",
+            background: "#fff",
+            borderRadius: 16,
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              marginBottom: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              color: "#1e293b",
+            }}
+          >
+            Extended area size
+          </div>
+          <input
+            type="range"
+            value={extendRadius}
+            min={coreRadius + GAP_RADIUS}
+            max={52}
+            step={1}
+            onChange={(e) =>
+              setExtendRadius(sanitizeExtendRadius(Number(e.target.value), coreRadius))
+            }
+            style={{ width: "100%" }}
+          />
+          <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+            Dashed circle
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function DriverSignup() {
   const query = useMemo(() => getQueryParams(), []);
+  const targetDate = useMemo(
+    () => getTargetDateFromQuery(query.deliveryDate),
+    [query.deliveryDate]
+  );
+  const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
+  const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
+  const defaultCity = useMemo(() => normalizeCity(query.city), [query.city]);
+  const mapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
+  const adminNotice = useMemo(
+    () => normalizeNotice(decodeURIComponent(query.notice || "")),
+    [query.notice]
+  );
+
+  const [city, setCity] = useState<City>(defaultCity);
   const [driverId, setDriverId] = useState("");
-  const [availability, setAvailability] = useState("available");
-  const [maxLoad, setMaxLoad] = useState(200);
+  const [availability, setAvailability] = useState<Availability>("available");
+  const [maxLoad, setMaxLoad] = useState<number>(DEFAULT_MAX_LOAD);
+  const [vehicleTypes, setVehicleTypes] = useState<string[]>(["Van"]);
+  const [point, setPoint] = useState<MapPoint>({ x: 50, y: 50 });
+  const [coreRadius, setCoreRadius] = useState<number>(DEFAULT_CORE_RADIUS);
+  const [extendRadius, setExtendRadius] = useState<number>(DEFAULT_EXTEND_RADIUS);
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
+
+  const payload: SignupPayload = {
+    deliveryDate: deliveryDateIso,
+    city,
+    driverId,
+    availability,
+    maxLoad,
+    vehicleTypes,
+    area: {
+      point,
+      coreRadius,
+      extendRadius,
+    },
+    mapImage,
+    adminNotice,
+    notes,
+  };
+
+  const toggleVehicle = (type: string) => {
+    setVehicleTypes((prev) => {
+      if (prev.includes(type)) {
+        const next = prev.filter((v) => v !== type);
+        return next.length > 0 ? next : prev;
+      }
+      return [...prev, type];
+    });
+  };
+
+  const resetForm = () => {
+    setCity(defaultCity);
+    setDriverId("");
+    setAvailability("available");
+    setMaxLoad(DEFAULT_MAX_LOAD);
+    setVehicleTypes(["Van"]);
+    setPoint({ x: 50, y: 50 });
+    setCoreRadius(DEFAULT_CORE_RADIUS);
+    setExtendRadius(DEFAULT_EXTEND_RADIUS);
+    setNotes("");
+    setSubmitted(false);
+  };
 
   const handleSubmit = () => {
     if (!driverId.trim()) {
       alert("Please enter Driver ID");
       return;
     }
-
-    const payload = {
-      deliveryDate: query.deliveryDate,
-      city: query.city,
-      driverId,
-      availability,
-      maxLoad,
-      notes,
-    };
 
     console.log("Driver signup payload:", payload);
     setSubmitted(true);
@@ -105,7 +483,7 @@ export default function DriverSignup() {
       style={{
         minHeight: "100vh",
         background: "#f1f5f9",
-        padding: 20,
+        padding: 16,
         fontFamily: "Arial, sans-serif",
       }}
     >
@@ -115,44 +493,46 @@ export default function DriverSignup() {
           maxWidth: 520,
           margin: "0 auto",
           background: "white",
-          borderRadius: 24,
+          borderRadius: 28,
           boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
           overflow: "hidden",
         }}
       >
-        <div style={{ padding: 24, textAlign: "center" }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "#0f172a" }}>
-            Driver Signup
+        <div style={{ background: "white", padding: "20px 20px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+            <img
+              src="/microexpress-logo.png"
+              alt="MicroExpress"
+              style={{ marginBottom: 12, height: 64, width: "auto" }}
+            />
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>
+              Driver Signup
+            </div>
           </div>
         </div>
 
-        <div style={{ padding: "0 16px 16px" }}>
+        <div style={{ padding: "0 16px 12px" }}>
           <div
             style={{
+              borderRadius: 24,
+              border: "2px solid #fecaca",
               background: "#dc2626",
-              color: "white",
-              borderRadius: 20,
               padding: 16,
               textAlign: "center",
+              color: "white",
             }}
           >
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: "0.14em",
-              }}
-            >
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.18em" }}>
               DELIVERY DATE
             </div>
-            <div style={{ marginTop: 6, fontSize: 26, fontWeight: 900 }}>
-              {query.deliveryDate}
+            <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
+              {targetDateText}
             </div>
             <div
               style={{
                 marginTop: 10,
-                background: "rgba(255,255,255,0.16)",
-                borderRadius: 14,
+                borderRadius: 16,
+                background: "rgba(255,255,255,0.15)",
                 padding: 10,
                 fontSize: 14,
                 fontWeight: 700,
@@ -163,37 +543,42 @@ export default function DriverSignup() {
           </div>
         </div>
 
-        <div
-          style={{
-            margin: "0 16px 16px",
-            background: "#fcd34d",
-            borderRadius: 14,
-            padding: 12,
-            fontWeight: 700,
-            color: "#1f2937",
-          }}
-        >
-          {query.notice}
-        </div>
+        <NoticeTicker text={adminNotice} />
 
-        <div style={{ padding: 16 }}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>City</label>
+        <div style={{ display: "grid", gap: 20, padding: 20 }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>City</label>
             <div
               style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 8,
                 marginTop: 8,
-                padding: 12,
-                borderRadius: 12,
-                border: "1px solid #cbd5e1",
-                background: "#f8fafc",
               }}
             >
-              {query.city}
+              {cityList.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setCity(item)}
+                  style={{
+                    height: 48,
+                    borderRadius: 16,
+                    border: city === item ? "1px solid #111827" : "1px solid #cbd5e1",
+                    background: city === item ? "#111827" : "white",
+                    color: city === item ? "white" : "#334155",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {item}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
               Driver ID
             </label>
             <input
@@ -203,25 +588,26 @@ export default function DriverSignup() {
               style={{
                 width: "100%",
                 marginTop: 8,
-                padding: 12,
-                borderRadius: 12,
+                height: 48,
+                borderRadius: 16,
                 border: "1px solid #cbd5e1",
+                padding: "0 12px",
                 fontSize: 16,
                 boxSizing: "border-box",
               }}
             />
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
               Availability
             </label>
             <div
               style={{
-                marginTop: 8,
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr 1fr",
                 gap: 8,
+                marginTop: 8,
               }}
             >
               {[
@@ -232,17 +618,17 @@ export default function DriverSignup() {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setAvailability(value)}
+                  onClick={() => setAvailability(value as Availability)}
                   style={{
-                    height: 46,
-                    borderRadius: 12,
+                    height: 48,
+                    borderRadius: 16,
                     border:
                       availability === value
                         ? "1px solid #111827"
                         : "1px solid #cbd5e1",
                     background: availability === value ? "#111827" : "white",
                     color: availability === value ? "white" : "#334155",
-                    fontWeight: 700,
+                    fontWeight: 600,
                     cursor: "pointer",
                   }}
                 >
@@ -252,49 +638,99 @@ export default function DriverSignup() {
             </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
               Max load
             </label>
             <input
               type="number"
               value={maxLoad}
-              onChange={(e) => setMaxLoad(Number(e.target.value))}
+              onChange={(e) => setMaxLoad(sanitizeLoad(Number(e.target.value)))}
               style={{
                 width: "100%",
                 marginTop: 8,
-                padding: 12,
-                borderRadius: 12,
+                height: 48,
+                borderRadius: 16,
                 border: "1px solid #cbd5e1",
+                padding: "0 12px",
                 fontSize: 16,
                 boxSizing: "border-box",
               }}
             />
             <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-              Experienced drivers can usually handle up to around 250 stops per
-              day.
+              Experienced drivers can usually handle up to around 250 stops per day.
             </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>
-              Reward map
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+              Vehicle type
             </label>
-            <img
-              src={query.mapImage}
-              alt="Reward map"
+            <div
               style={{
-                width: "100%",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
                 marginTop: 8,
-                borderRadius: 16,
-                border: "1px solid #e2e8f0",
-                display: "block",
               }}
-            />
+            >
+              {vehicleOptions.map((type) => {
+                const active = vehicleTypes.includes(type);
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => toggleVehicle(type)}
+                    style={{
+                      height: 40,
+                      borderRadius: 12,
+                      border: active ? "1px solid #111827" : "1px solid #cbd5e1",
+                      background: active ? "#111827" : "white",
+                      color: active ? "white" : "#334155",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {type}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 700, color: "#1f2937" }}>Notes</label>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+              Delivery area
+            </label>
+            <div
+              style={{
+                marginTop: 8,
+                borderRadius: 16,
+                background: "#f8fafc",
+                padding: "10px 12px",
+                fontSize: 12,
+                color: "#475569",
+              }}
+            >
+              Solid circle = preferred area. Dashed circle = extended area.
+            </div>
+          </div>
+
+          <StaticMapSelector
+            imageUrl={mapImage}
+            point={point}
+            setPoint={setPoint}
+            coreRadius={coreRadius}
+            setCoreRadius={setCoreRadius}
+            extendRadius={extendRadius}
+            setExtendRadius={setExtendRadius}
+          />
+
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, color: "#1e293b" }}>
+              Notes
+            </label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -302,33 +738,64 @@ export default function DriverSignup() {
               style={{
                 width: "100%",
                 marginTop: 8,
-                padding: 12,
-                borderRadius: 12,
-                border: "1px solid #cbd5e1",
-                fontSize: 16,
                 minHeight: 100,
+                borderRadius: 16,
+                border: "1px solid #cbd5e1",
+                padding: 12,
+                fontSize: 16,
                 boxSizing: "border-box",
                 resize: "vertical",
               }}
             />
           </div>
 
-          <button
-            onClick={handleSubmit}
+          <div style={{ display: "grid", gap: 8, paddingTop: 4 }}>
+            <button
+              onClick={handleSubmit}
+              style={{
+                width: "100%",
+                height: 48,
+                borderRadius: 16,
+                border: "none",
+                background: "#111827",
+                color: "white",
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: "pointer",
+              }}
+            >
+              Submit
+            </button>
+
+            <button
+              onClick={resetForm}
+              style={{
+                width: "100%",
+                height: 48,
+                borderRadius: 16,
+                border: "1px solid #cbd5e1",
+                background: "white",
+                color: "#0f172a",
+                fontWeight: 600,
+                fontSize: 16,
+                cursor: "pointer",
+              }}
+            >
+              Reset
+            </button>
+          </div>
+
+          <div
             style={{
-              width: "100%",
-              height: 50,
-              borderRadius: 14,
-              border: "none",
-              background: "#111827",
-              color: "white",
-              fontWeight: 800,
-              fontSize: 16,
-              cursor: "pointer",
+              borderRadius: 16,
+              background: "#f8fafc",
+              padding: 12,
+              fontSize: 12,
+              color: "#64748b",
             }}
           >
-            Submit
-          </button>
+            Final job allocation is based on overall operations.
+          </div>
         </div>
       </div>
     </div>
