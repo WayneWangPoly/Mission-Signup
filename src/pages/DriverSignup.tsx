@@ -36,7 +36,7 @@ const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
   "New Warehouse location: 4b Rosebank Ave, Clayton South. Admin: Allen. Open at 6:30 from Tuesday to Saturday.";
-const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map.png";
+const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
 function getDefaultTargetDate(): Date {
   const d = new Date();
