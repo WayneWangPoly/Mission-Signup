@@ -464,16 +464,24 @@ export default function DriverSignup() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const text = await res.text();
+      console.log("Apps Script raw response:", text);
+
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error("Apps Script did not return valid JSON: " + text);
+      }
 
       if (!result.ok) {
-        throw new Error(result.error || "Submit failed");
+      throw new Error(result.error || "Submit failed");
       }
 
       setSubmitted(true);
     } catch (err) {
       console.error(err);
-      alert("Submit failed. Please try again.");
+      alert("Submit failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSubmitting(false);
     }
