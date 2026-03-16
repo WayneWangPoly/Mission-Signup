@@ -24,7 +24,7 @@ type SignupPayload = {
 };
 
 const APPS_SCRIPT_URL =
-  "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+  "https://script.google.com/macros/s/AKfycbzvS53IkBAgDFRreHh-woQGvSz1XO7O22yKEVrA_Vf4KYqsNl7AOVrjUKXVLVSwBiFtMA/exec";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
