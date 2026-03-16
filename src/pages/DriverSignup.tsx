@@ -23,7 +23,7 @@ type SignupPayload = {
   previewImage: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzpxaYr9nYe7FaTNiqV0PazRfBQW309RAlCBOrIzfO7TjPLuIolvArTkb7hApmmQOM-w/exec";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -106,10 +106,18 @@ function normalizeNotice(value: string): string {
   return value.trim() || DEFAULT_NOTICE;
 }
 
-function NoticeTicker({ text }: { text: string }) {
+function NoticeTicker({
+  text,
+  onClick,
+}: {
+  text: string;
+  onClick: () => void;
+}) {
   const content = `${text}   •   ${text}   •   ${text}`;
+
   return (
     <div
+      onClick={onClick}
       style={{
         margin: "0 16px 16px",
         overflow: "hidden",
@@ -117,6 +125,7 @@ function NoticeTicker({ text }: { text: string }) {
         border: "1px solid #fcd34d",
         background: "#fcd34d",
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        cursor: "pointer",
       }}
     >
       <div
@@ -127,14 +136,14 @@ function NoticeTicker({ text }: { text: string }) {
           fontWeight: 700,
           color: "#111827",
           display: "inline-block",
-          animation: "marquee 18s linear infinite",
+          animation: "marquee 24s linear infinite",
         }}
       >
         {content}
       </div>
       <style>{`
         @keyframes marquee {
-          0% { transform: translateX(100%); }
+          0% { transform: translateX(60%); }
           100% { transform: translateX(-100%); }
         }
       `}</style>
@@ -429,13 +438,15 @@ export default function DriverSignup() {
   const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
 
   const defaultCity = useMemo(() => normalizeCity(query.city), [query.city]);
-  const [embeddedMapImage, setEmbeddedMapImage] = useState(
-    normalizeImage(query.mapImage)
-  );
-  const adminNotice = useMemo(
+  const initialNotice = useMemo(
     () => normalizeNotice(decodeURIComponent(query.notice || "")),
     [query.notice]
   );
+
+  const [embeddedMapImage, setEmbeddedMapImage] = useState(
+    normalizeImage(query.mapImage)
+  );
+  const [editableNotice, setEditableNotice] = useState(initialNotice);
 
   const [city, setCity] = useState<City>(defaultCity);
   const [driverId, setDriverId] = useState("");
@@ -448,14 +459,31 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [dateEditMode, setDateEditMode] = useState(false);
 
   useEffect(() => {
     const normalized = normalizeImage(query.mapImage);
     setEmbeddedMapImage(normalized);
   }, [query.mapImage]);
 
-  const moveDateByDays = (days: number) => {
+  useEffect(() => {
+    setEditableNotice(initialNotice);
+  }, [initialNotice]);
+
+  const requestPassword = () => {
+    const input = window.prompt("Enter password");
+    if (input === null) return false;
+
+    if (input !== DATE_EDIT_PASSWORD) {
+      alert("Incorrect password.");
+      return false;
+    }
+
+    return true;
+  };
+
+  const changeDateWithPassword = (days: number) => {
+    if (!requestPassword()) return;
+
     setTargetDate((prev) => {
       const next = new Date(prev);
       next.setDate(next.getDate() + days);
@@ -463,17 +491,13 @@ export default function DriverSignup() {
     });
   };
 
-  const tryUnlockDateEdit = () => {
-    const input = window.prompt("Enter password to edit the date");
-    if (input === null) return;
+  const editNoticeWithPassword = () => {
+    if (!requestPassword()) return;
 
-    if (input === DATE_EDIT_PASSWORD) {
-      setDateEditMode(true);
-      alert("Date edit unlocked.");
-      return;
-    }
+    const next = window.prompt("Edit notice text", editableNotice);
+    if (next === null) return;
 
-    alert("Incorrect password.");
+    setEditableNotice(next.trim() || DEFAULT_NOTICE);
   };
 
   const toggleVehicle = (type: string) => {
@@ -497,9 +521,9 @@ export default function DriverSignup() {
     setExtendRadius(DEFAULT_EXTEND_RADIUS);
     setNotes("");
     setTargetDate(initialTargetDate);
+    setEditableNotice(initialNotice);
     setSubmitted(false);
     setSubmitting(false);
-    setDateEditMode(false);
   };
 
   const handleSubmit = async () => {
@@ -537,7 +561,7 @@ export default function DriverSignup() {
           extendRadius,
         },
         mapImage: embeddedMapImage,
-        adminNotice,
+        adminNotice: editableNotice,
         notes,
         previewImage,
       };
@@ -681,7 +705,7 @@ export default function DriverSignup() {
             >
               <button
                 type="button"
-                onClick={() => moveDateByDays(-1)}
+                onClick={() => changeDateWithPassword(-1)}
                 style={{
                   height: 42,
                   borderRadius: 14,
@@ -696,17 +720,7 @@ export default function DriverSignup() {
                 -
               </button>
 
-              <button
-                type="button"
-                onClick={tryUnlockDateEdit}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "white",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
+              <div>
                 <div
                   style={{
                     fontSize: 12,
@@ -719,11 +733,11 @@ export default function DriverSignup() {
                 <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
                   {targetDateText}
                 </div>
-              </button>
+              </div>
 
               <button
                 type="button"
-                onClick={() => moveDateByDays(1)}
+                onClick={() => changeDateWithPassword(1)}
                 style={{
                   height: 42,
                   borderRadius: 14,
@@ -738,50 +752,10 @@ export default function DriverSignup() {
                 +
               </button>
             </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                borderRadius: 16,
-                background: "rgba(255,255,255,0.15)",
-                padding: 10,
-                fontSize: 14,
-                fontWeight: 700,
-              }}
-            >
-              Tap the date to unlock manual edit. Use - / + for one day change.
-            </div>
-
-            {dateEditMode && (
-              <div style={{ marginTop: 10 }}>
-                <input
-                  type="date"
-                  value={deliveryDateIso}
-                  onChange={(e) => {
-                    const next = new Date(e.target.value);
-                    if (!Number.isNaN(next.getTime())) {
-                      setTargetDate(next);
-                    }
-                  }}
-                  style={{
-                    width: "100%",
-                    height: 44,
-                    borderRadius: 14,
-                    border: "1px solid rgba(255,255,255,0.35)",
-                    background: "rgba(255,255,255,0.96)",
-                    color: "#111827",
-                    padding: "0 12px",
-                    boxSizing: "border-box",
-                    fontSize: 16,
-                    fontWeight: 700,
-                  }}
-                />
-              </div>
-            )}
           </div>
         </div>
 
-        <NoticeTicker text={adminNotice} />
+        <NoticeTicker text={editableNotice} onClick={editNoticeWithPassword} />
 
         <div style={{ display: "grid", gap: 20, padding: 20 }}>
           <div>
