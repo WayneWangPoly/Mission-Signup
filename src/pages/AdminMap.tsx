@@ -18,7 +18,7 @@ type OverlayItem = {
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const cityBaseImages: Record<City, string> = {
-  Adelaide: "/adelaide-task-base-map.png",
+  Adelaide: "/adelaide-task-base-map-v2.png",
   Melbourne: "/melbourne-task-base-map.png",
   Brisbane: "/brisbane-task-base-map.png",
 };
