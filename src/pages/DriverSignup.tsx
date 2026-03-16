@@ -37,7 +37,7 @@ const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
   "Please check the reward colors carefully before choosing your area.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
-const DATE_EDIT_PASSWORD = "micro2026";
+const DATE_EDIT_PASSWORD = "1010";
 
 function getDefaultTargetDate(): Date {
   return new Date();
