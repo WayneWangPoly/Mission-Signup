@@ -136,7 +136,7 @@ function NoticeTicker({
           fontWeight: 700,
           color: "#111827",
           display: "inline-block",
-          animation: "marquee 20s linear infinite",
+          animation: "marquee 22s linear infinite",
         }}
       >
         {content}
