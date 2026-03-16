@@ -35,7 +35,7 @@ const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
-  "Warehouse: 4b Rosebank Ave, Clayton South. Admin: Allen. Opens at 6:30 from Tuesday to Saturday.";
+  "Eastern Warehouse: 4b Rosebank Ave, Clayton South. Admin: Allen.  Western Warehouse: 8/10 Law Ct, Sunshine West. Opens at 6:30 from Tuesday to Saturday.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 const DATE_EDIT_PASSWORD = "1010";
 
