@@ -34,7 +34,7 @@ type CurrentMissionResponse = {
   error?: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxF8cTUpSVT11Z_UUI5Ktvs7-fr2TeZ7wzCNuYWniC5OnjbF2OQBAhZyxOLff3iRRy/exec";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -48,7 +48,6 @@ const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
   "Please check the reward colors carefully before choosing your area.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
-const DATE_EDIT_PASSWORD = "1010";
 
 function getDefaultTargetDate(): Date {
   return new Date();
@@ -438,21 +437,22 @@ async function generateMapPreviewImage(
 
 export default function DriverSignup() {
   const query = useMemo(() => getQueryParams(), []);
-  const initialTargetDate = useMemo(
+
+  const fallbackDate = useMemo(
     () => getTargetDateFromQuery(query.deliveryDate),
     [query.deliveryDate]
   );
-  const initialNotice = useMemo(
+  const fallbackNotice = useMemo(
     () => normalizeNotice(decodeURIComponent(query.notice || "")),
     [query.notice]
   );
-  const initialCity = useMemo(() => normalizeCity(query.city), [query.city]);
-  const initialMapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
+  const fallbackCity = useMemo(() => normalizeCity(query.city), [query.city]);
+  const fallbackMapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
 
-  const [targetDate, setTargetDate] = useState<Date>(initialTargetDate);
-  const [editableNotice, setEditableNotice] = useState(initialNotice);
-  const [city, setCity] = useState<City>(initialCity);
-  const [embeddedMapImage, setEmbeddedMapImage] = useState(initialMapImage);
+  const [targetDate, setTargetDate] = useState<Date>(fallbackDate);
+  const [editableNotice, setEditableNotice] = useState("");
+  const [city, setCity] = useState<City>(fallbackCity);
+  const [embeddedMapImage, setEmbeddedMapImage] = useState("");
 
   const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
   const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
@@ -467,12 +467,21 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [missionLoading, setMissionLoading] = useState(false);
+  const [missionLoading, setMissionLoading] = useState(true);
   const [missionError, setMissionError] = useState("");
+  const [missionReady, setMissionReady] = useState(false);
 
   useEffect(() => {
     const loadCurrentMission = async () => {
-      if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) return;
+      if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) {
+        setTargetDate(fallbackDate);
+        setEditableNotice(fallbackNotice);
+        setCity(fallbackCity);
+        setEmbeddedMapImage(fallbackMapImage);
+        setMissionLoading(false);
+        setMissionReady(true);
+        return;
+      }
 
       try {
         setMissionLoading(true);
@@ -486,35 +495,30 @@ export default function DriverSignup() {
         }
 
         const mission = result.mission;
+        const nextDate = mission.deliveryDate
+          ? new Date(mission.deliveryDate)
+          : fallbackDate;
 
-        if (mission.deliveryDate) {
-          const nextDate = new Date(mission.deliveryDate);
-          if (!Number.isNaN(nextDate.getTime())) {
-            setTargetDate(nextDate);
-          }
-        }
-
-        if (mission.city) {
-          setCity(normalizeCity(mission.city));
-        }
-
-        if (mission.notice) {
-          setEditableNotice(normalizeNotice(mission.notice));
-        }
-
-        if (mission.mapImage) {
-          setEmbeddedMapImage(normalizeImage(mission.mapImage));
-        }
+        setTargetDate(!Number.isNaN(nextDate.getTime()) ? nextDate : fallbackDate);
+        setCity(normalizeCity(mission.city || fallbackCity));
+        setEditableNotice(normalizeNotice(mission.notice || fallbackNotice));
+        setEmbeddedMapImage(normalizeImage(mission.mapImage || fallbackMapImage));
+        setMissionReady(true);
       } catch (err) {
         console.error(err);
         setMissionError(err instanceof Error ? err.message : String(err));
+        setTargetDate(fallbackDate);
+        setCity(fallbackCity);
+        setEditableNotice(fallbackNotice);
+        setEmbeddedMapImage(fallbackMapImage);
+        setMissionReady(true);
       } finally {
         setMissionLoading(false);
       }
     };
 
     loadCurrentMission();
-  }, []);
+  }, [fallbackDate, fallbackNotice, fallbackCity, fallbackMapImage]);
 
   const updateCurrentMission = async (next: {
     deliveryDate?: string;
@@ -670,6 +674,43 @@ export default function DriverSignup() {
     }
   };
 
+  if (!missionReady) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f1f5f9",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            background: "white",
+            borderRadius: 24,
+            padding: 28,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
+            Loading current mission...
+          </div>
+          {!!missionError && (
+            <div style={{ marginTop: 12, fontSize: 13, color: "#dc2626" }}>
+              {missionError}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (submitted) {
     return (
       <div
@@ -766,12 +807,6 @@ export default function DriverSignup() {
             {missionLoading && (
               <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
                 Loading current mission...
-              </div>
-            )}
-
-            {!!missionError && (
-              <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>
-                {missionError}
               </div>
             )}
           </div>
