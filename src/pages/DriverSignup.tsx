@@ -34,7 +34,7 @@ type CurrentMissionResponse = {
   error?: string;
 };
 
-const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxF8cTUpSVT11Z_UUI5Ktvs7-fr2TeZ7wzCNuYWniC5OnjbF2OQBAhZyxOLff3iRRy/exec";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -46,7 +46,7 @@ const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
-  "Please check the reward colors carefully before choosing your area.";
+  "Please click the map to choose your preferred areas.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
 function getDefaultTargetDate(): Date {
