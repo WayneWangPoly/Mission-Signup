@@ -34,7 +34,7 @@ type CurrentMissionResponse = {
   error?: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyABLlhYBAd7AectbV13j2lwO0dysuVEvciopp3GaZmqgjsQ3UWchvRw9JxP_wf6Rd0Bg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxF8cTUpSVT11Z_UUI5Ktvs7-fr2TeZ7wzCNuYWniC5OnjbF2OQBAhZyxOLff3iRRy/exec";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
