@@ -23,14 +23,14 @@ type SignupPayload = {
   previewImage: string;
 };
 
-const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjPNyV20wbVIJ9NofyQs9L9XPvnu7ing-eZ9qevApI8OO7HfcUPzgH_9k3pnus6XI7nQ/exec";
 
 /**
  * 管理员只需要改这几个常量
  */
 const MANUAL_DELIVERY_DATE = "2026-03-18";
 const MANUAL_NOTICE =
-  "Please check the reward colors carefully before choosing your area.";
+  "Please click the map to choose your area.";
 const DEFAULT_CITY: City = "Melbourne";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
