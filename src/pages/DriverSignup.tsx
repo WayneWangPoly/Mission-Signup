@@ -34,7 +34,7 @@ type CurrentMissionResponse = {
   error?: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzxF8cTUpSVT11Z_UUI5Ktvs7-fr2TeZ7wzCNuYWniC5OnjbF2OQBAhZyxOLff3iRRy/exec";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -46,27 +46,11 @@ const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
-  "Please click the map to choose your preferred areas.";
+  "Please check the reward colors carefully before choosing your area.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
 function getDefaultTargetDate(): Date {
   return new Date();
-}
-
-function getQueryParams() {
-  const params = new URLSearchParams(window.location.search);
-  return {
-    deliveryDate: params.get("deliveryDate") ?? "",
-    city: params.get("city") ?? "",
-    mapImage: params.get("mapImage") ?? "",
-    notice: params.get("notice") ?? "",
-  };
-}
-
-function getTargetDateFromQuery(raw: string): Date {
-  if (!raw) return getDefaultTargetDate();
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? getDefaultTargetDate() : parsed;
 }
 
 function formatBannerDate(date: Date): string {
@@ -436,18 +420,10 @@ async function generateMapPreviewImage(
 }
 
 export default function DriverSignup() {
-  const query = useMemo(() => getQueryParams(), []);
-
-  const fallbackDate = useMemo(
-    () => getTargetDateFromQuery(query.deliveryDate),
-    [query.deliveryDate]
-  );
-  const fallbackNotice = useMemo(
-    () => normalizeNotice(decodeURIComponent(query.notice || "")),
-    [query.notice]
-  );
-  const fallbackCity = useMemo(() => normalizeCity(query.city), [query.city]);
-  const fallbackMapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
+  const fallbackDate = useMemo(() => getDefaultTargetDate(), []);
+  const fallbackNotice = useMemo(() => DEFAULT_NOTICE, []);
+  const fallbackCity = useMemo(() => DEFAULT_CITY, []);
+  const fallbackMapImage = useMemo(() => DEFAULT_MAP_IMAGE, []);
 
   const [targetDate, setTargetDate] = useState<Date>(fallbackDate);
   const [editableNotice, setEditableNotice] = useState("");
@@ -527,7 +503,7 @@ export default function DriverSignup() {
     mapImage?: string;
   }) => {
     const password = window.prompt("Enter password");
-    if (password === null) return false;
+    if (password === null) return null;
 
     try {
       const res = await fetch(APPS_SCRIPT_URL, {
@@ -551,11 +527,11 @@ export default function DriverSignup() {
         throw new Error(result.error || "Failed to update current mission");
       }
 
-      return true;
+      return result.saved || null;
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : String(err));
-      return false;
+      return null;
     }
   };
 
@@ -564,12 +540,15 @@ export default function DriverSignup() {
     next.setDate(next.getDate() + days);
     const nextIso = formatIsoDate(next);
 
-    const ok = await updateCurrentMission({
+    const saved = await updateCurrentMission({
       deliveryDate: nextIso,
     });
 
-    if (ok) {
-      setTargetDate(next);
+    if (saved?.deliveryDate) {
+      const parsed = new Date(saved.deliveryDate);
+      if (!Number.isNaN(parsed.getTime())) {
+        setTargetDate(parsed);
+      }
     }
   };
 
@@ -579,12 +558,12 @@ export default function DriverSignup() {
 
     const finalNotice = next.trim() || DEFAULT_NOTICE;
 
-    const ok = await updateCurrentMission({
+    const saved = await updateCurrentMission({
       notice: finalNotice,
     });
 
-    if (ok) {
-      setEditableNotice(finalNotice);
+    if (saved?.notice) {
+      setEditableNotice(saved.notice);
     }
   };
 
