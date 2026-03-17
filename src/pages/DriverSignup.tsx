@@ -23,34 +23,29 @@ type SignupPayload = {
   previewImage: string;
 };
 
-type CurrentMissionResponse = {
-  ok: boolean;
-  mission?: {
-    deliveryDate: string;
-    city: string;
-    notice: string;
-    mapImage: string;
-  };
-  error?: string;
-};
-
 const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+
+/**
+ * 管理员只需要改这几个常量
+ */
+const MANUAL_DELIVERY_DATE = "2026-03-18";
+const MANUAL_NOTICE =
+  "Please check the reward colors carefully before choosing your area.";
+const DEFAULT_CITY: City = "Melbourne";
+const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
 
-const DEFAULT_CITY: City = "Melbourne";
 const DEFAULT_MAX_LOAD = 200;
 const DEFAULT_CORE_RADIUS = 18;
 const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
-const DEFAULT_NOTICE =
-  "Please check the reward colors carefully before choosing your area.";
-const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 
-function getDefaultTargetDate(): Date {
-  return new Date();
+function getManualTargetDate(): Date {
+  const parsed = new Date(MANUAL_DELIVERY_DATE);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 function formatBannerDate(date: Date): string {
@@ -87,30 +82,11 @@ function sanitizePoint(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function normalizeCity(value: string): City {
-  return cityList.includes(value as City) ? (value as City) : DEFAULT_CITY;
-}
-
-function normalizeImage(value: string): string {
-  return value.trim() || DEFAULT_MAP_IMAGE;
-}
-
-function normalizeNotice(value: string): string {
-  return value.trim() || DEFAULT_NOTICE;
-}
-
-function NoticeTicker({
-  text,
-  onClick,
-}: {
-  text: string;
-  onClick: () => void;
-}) {
+function NoticeTicker({ text }: { text: string }) {
   const content = `${text}   •   ${text}   •   ${text}`;
 
   return (
     <div
-      onClick={onClick}
       style={{
         margin: "0 16px 16px",
         overflow: "hidden",
@@ -118,7 +94,6 @@ function NoticeTicker({
         border: "1px solid #fcd34d",
         background: "#fcd34d",
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-        cursor: "pointer",
       }}
     >
       <div
@@ -420,19 +395,11 @@ async function generateMapPreviewImage(
 }
 
 export default function DriverSignup() {
-  const fallbackDate = useMemo(() => getDefaultTargetDate(), []);
-  const fallbackNotice = useMemo(() => DEFAULT_NOTICE, []);
-  const fallbackCity = useMemo(() => DEFAULT_CITY, []);
-  const fallbackMapImage = useMemo(() => DEFAULT_MAP_IMAGE, []);
-
-  const [targetDate, setTargetDate] = useState<Date>(fallbackDate);
-  const [editableNotice, setEditableNotice] = useState("");
-  const [city, setCity] = useState<City>(fallbackCity);
-  const [embeddedMapImage, setEmbeddedMapImage] = useState("");
-
+  const targetDate = useMemo(() => getManualTargetDate(), []);
   const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
   const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
 
+  const [city, setCity] = useState<City>(DEFAULT_CITY);
   const [driverId, setDriverId] = useState("");
   const [availability, setAvailability] = useState<Availability>("available");
   const [maxLoad, setMaxLoad] = useState<number>(DEFAULT_MAX_LOAD);
@@ -443,129 +410,9 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [missionLoading, setMissionLoading] = useState(true);
-  const [missionError, setMissionError] = useState("");
-  const [missionReady, setMissionReady] = useState(false);
 
-  useEffect(() => {
-    const loadCurrentMission = async () => {
-      if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) {
-        setTargetDate(fallbackDate);
-        setEditableNotice(fallbackNotice);
-        setCity(fallbackCity);
-        setEmbeddedMapImage(fallbackMapImage);
-        setMissionLoading(false);
-        setMissionReady(true);
-        return;
-      }
-
-      try {
-        setMissionLoading(true);
-        setMissionError("");
-
-        const res = await fetch(`${APPS_SCRIPT_URL}?action=getCurrentMission`);
-        const result: CurrentMissionResponse = await res.json();
-
-        if (!result.ok || !result.mission) {
-          throw new Error(result.error || "Failed to load current mission");
-        }
-
-        const mission = result.mission;
-        const nextDate = mission.deliveryDate
-          ? new Date(mission.deliveryDate)
-          : fallbackDate;
-
-        setTargetDate(!Number.isNaN(nextDate.getTime()) ? nextDate : fallbackDate);
-        setCity(normalizeCity(mission.city || fallbackCity));
-        setEditableNotice(normalizeNotice(mission.notice || fallbackNotice));
-        setEmbeddedMapImage(normalizeImage(mission.mapImage || fallbackMapImage));
-        setMissionReady(true);
-      } catch (err) {
-        console.error(err);
-        setMissionError(err instanceof Error ? err.message : String(err));
-        setTargetDate(fallbackDate);
-        setCity(fallbackCity);
-        setEditableNotice(fallbackNotice);
-        setEmbeddedMapImage(fallbackMapImage);
-        setMissionReady(true);
-      } finally {
-        setMissionLoading(false);
-      }
-    };
-
-    loadCurrentMission();
-  }, [fallbackDate, fallbackNotice, fallbackCity, fallbackMapImage]);
-
-  const updateCurrentMission = async (next: {
-    deliveryDate?: string;
-    city?: City;
-    notice?: string;
-    mapImage?: string;
-  }) => {
-    const password = window.prompt("Enter password");
-    if (password === null) return null;
-
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8",
-        },
-        body: JSON.stringify({
-          action: "updateCurrentMission",
-          password,
-          deliveryDate: next.deliveryDate ?? deliveryDateIso,
-          city: next.city ?? city,
-          notice: next.notice ?? editableNotice,
-          mapImage: next.mapImage ?? embeddedMapImage,
-        }),
-      });
-
-      const result = await res.json();
-
-      if (!result.ok) {
-        throw new Error(result.error || "Failed to update current mission");
-      }
-
-      return result.saved || null;
-    } catch (err) {
-      console.error(err);
-      alert(err instanceof Error ? err.message : String(err));
-      return null;
-    }
-  };
-
-  const changeDateWithPassword = async (days: number) => {
-    const next = new Date(targetDate);
-    next.setDate(next.getDate() + days);
-    const nextIso = formatIsoDate(next);
-
-    const saved = await updateCurrentMission({
-      deliveryDate: nextIso,
-    });
-
-    if (saved?.deliveryDate) {
-      const parsed = new Date(saved.deliveryDate);
-      if (!Number.isNaN(parsed.getTime())) {
-        setTargetDate(parsed);
-      }
-    }
-  };
-
-  const editNoticeWithPassword = async () => {
-    const next = window.prompt("Edit notice text", editableNotice);
-    if (next === null) return;
-
-    const finalNotice = next.trim() || DEFAULT_NOTICE;
-
-    const saved = await updateCurrentMission({
-      notice: finalNotice,
-    });
-
-    if (saved?.notice) {
-      setEditableNotice(saved.notice);
-    }
-  };
+  const editableNotice = MANUAL_NOTICE;
+  const embeddedMapImage = DEFAULT_MAP_IMAGE;
 
   const toggleVehicle = (type: string) => {
     setVehicleTypes((prev) => {
@@ -638,7 +485,14 @@ export default function DriverSignup() {
         body: JSON.stringify(payload),
       });
 
-      const result = await res.json();
+      const text = await res.text();
+      let result: { ok?: boolean; error?: string } = {};
+
+      try {
+        result = JSON.parse(text);
+      } catch {
+        throw new Error("Apps Script did not return valid JSON");
+      }
 
       if (!result.ok) {
         throw new Error(result.error || "Submit failed");
@@ -652,43 +506,6 @@ export default function DriverSignup() {
       setSubmitting(false);
     }
   };
-
-  if (!missionReady) {
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#f1f5f9",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-          fontFamily: "Arial, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 420,
-            background: "white",
-            borderRadius: 24,
-            padding: 28,
-            boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a" }}>
-            Loading current mission...
-          </div>
-          {!!missionError && (
-            <div style={{ marginTop: 12, fontSize: 13, color: "#dc2626" }}>
-              {missionError}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   if (submitted) {
     return (
@@ -782,12 +599,6 @@ export default function DriverSignup() {
             <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>
               Driver Signup
             </div>
-
-            {missionLoading && (
-              <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-                Loading current mission...
-              </div>
-            )}
           </div>
         </div>
 
@@ -804,65 +615,20 @@ export default function DriverSignup() {
           >
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "52px 1fr 52px",
-                alignItems: "center",
-                gap: 8,
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: "0.18em",
               }}
             >
-              <button
-                type="button"
-                onClick={() => changeDateWithPassword(-1)}
-                style={{
-                  height: 42,
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.35)",
-                  background: "rgba(255,255,255,0.12)",
-                  color: "white",
-                  fontSize: 22,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-              >
-                -
-              </button>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    letterSpacing: "0.18em",
-                  }}
-                >
-                  DELIVERY DATE
-                </div>
-                <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
-                  {targetDateText}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => changeDateWithPassword(1)}
-                style={{
-                  height: 42,
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.35)",
-                  background: "rgba(255,255,255,0.12)",
-                  color: "white",
-                  fontSize: 22,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                }}
-              >
-                +
-              </button>
+              DELIVERY DATE
+            </div>
+            <div style={{ marginTop: 6, fontSize: 28, fontWeight: 900 }}>
+              {targetDateText}
             </div>
           </div>
         </div>
 
-        <NoticeTicker text={editableNotice} onClick={editNoticeWithPassword} />
+        <NoticeTicker text={editableNotice} />
 
         <div style={{ display: "grid", gap: 20, padding: 20 }}>
           <div>
