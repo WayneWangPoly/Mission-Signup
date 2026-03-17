@@ -23,7 +23,18 @@ type SignupPayload = {
   previewImage: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxzpxaYr9nYe7FaTNiqV0PazRfBQW309RAlCBOrIzfO7TjPLuIolvArTkb7hApmmQOM-w/exec";
+type CurrentMissionResponse = {
+  ok: boolean;
+  mission?: {
+    deliveryDate: string;
+    city: string;
+    notice: string;
+    mapImage: string;
+  };
+  error?: string;
+};
+
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyABLlhYBAd7AectbV13j2lwO0dysuVEvciopp3GaZmqgjsQ3UWchvRw9JxP_wf6Rd0Bg/exec";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
@@ -35,7 +46,7 @@ const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
 const DEFAULT_NOTICE =
-  "Eastern Warehouse: 4b Rosebank Ave, Clayton South. Admin: Allen.  Western Warehouse: 8/10 Law Ct, Sunshine West. Opens at 6:30 from Tuesday to Saturday.";
+  "Please check the reward colors carefully before choosing your area.";
 const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
 const DATE_EDIT_PASSWORD = "1010";
 
@@ -46,7 +57,6 @@ function getDefaultTargetDate(): Date {
 function getQueryParams() {
   const params = new URLSearchParams(window.location.search);
   return {
-    missionId: params.get("missionId") ?? "",
     deliveryDate: params.get("deliveryDate") ?? "",
     city: params.get("city") ?? "",
     mapImage: params.get("mapImage") ?? "",
@@ -136,14 +146,14 @@ function NoticeTicker({
           fontWeight: 700,
           color: "#111827",
           display: "inline-block",
-          animation: "marquee 25s linear infinite",
+          animation: "marquee 24s linear infinite",
         }}
       >
         {content}
       </div>
       <style>{`
         @keyframes marquee {
-          0% { transform: translateX(15%); }
+          0% { transform: translateX(35%); }
           100% { transform: translateX(-100%); }
         }
       `}</style>
@@ -432,23 +442,21 @@ export default function DriverSignup() {
     () => getTargetDateFromQuery(query.deliveryDate),
     [query.deliveryDate]
   );
-
-  const [targetDate, setTargetDate] = useState<Date>(initialTargetDate);
-  const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
-  const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
-
-  const defaultCity = useMemo(() => normalizeCity(query.city), [query.city]);
   const initialNotice = useMemo(
     () => normalizeNotice(decodeURIComponent(query.notice || "")),
     [query.notice]
   );
+  const initialCity = useMemo(() => normalizeCity(query.city), [query.city]);
+  const initialMapImage = useMemo(() => normalizeImage(query.mapImage), [query.mapImage]);
 
-  const [embeddedMapImage, setEmbeddedMapImage] = useState(
-    normalizeImage(query.mapImage)
-  );
+  const [targetDate, setTargetDate] = useState<Date>(initialTargetDate);
   const [editableNotice, setEditableNotice] = useState(initialNotice);
+  const [city, setCity] = useState<City>(initialCity);
+  const [embeddedMapImage, setEmbeddedMapImage] = useState(initialMapImage);
 
-  const [city, setCity] = useState<City>(defaultCity);
+  const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
+  const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
+
   const [driverId, setDriverId] = useState("");
   const [availability, setAvailability] = useState<Availability>("available");
   const [maxLoad, setMaxLoad] = useState<number>(DEFAULT_MAX_LOAD);
@@ -459,45 +467,121 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [missionLoading, setMissionLoading] = useState(false);
+  const [missionError, setMissionError] = useState("");
 
   useEffect(() => {
-    const normalized = normalizeImage(query.mapImage);
-    setEmbeddedMapImage(normalized);
-  }, [query.mapImage]);
+    const loadCurrentMission = async () => {
+      if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.includes("PASTE_YOUR")) return;
 
-  useEffect(() => {
-    setEditableNotice(initialNotice);
-  }, [initialNotice]);
+      try {
+        setMissionLoading(true);
+        setMissionError("");
 
-  const requestPassword = () => {
-    const input = window.prompt("Enter password");
-    if (input === null) return false;
+        const res = await fetch(`${APPS_SCRIPT_URL}?action=getCurrentMission`);
+        const result: CurrentMissionResponse = await res.json();
 
-    if (input !== DATE_EDIT_PASSWORD) {
-      alert("Incorrect password.");
+        if (!result.ok || !result.mission) {
+          throw new Error(result.error || "Failed to load current mission");
+        }
+
+        const mission = result.mission;
+
+        if (mission.deliveryDate) {
+          const nextDate = new Date(mission.deliveryDate);
+          if (!Number.isNaN(nextDate.getTime())) {
+            setTargetDate(nextDate);
+          }
+        }
+
+        if (mission.city) {
+          setCity(normalizeCity(mission.city));
+        }
+
+        if (mission.notice) {
+          setEditableNotice(normalizeNotice(mission.notice));
+        }
+
+        if (mission.mapImage) {
+          setEmbeddedMapImage(normalizeImage(mission.mapImage));
+        }
+      } catch (err) {
+        console.error(err);
+        setMissionError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setMissionLoading(false);
+      }
+    };
+
+    loadCurrentMission();
+  }, []);
+
+  const updateCurrentMission = async (next: {
+    deliveryDate?: string;
+    city?: City;
+    notice?: string;
+    mapImage?: string;
+  }) => {
+    const password = window.prompt("Enter password");
+    if (password === null) return false;
+
+    try {
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8",
+        },
+        body: JSON.stringify({
+          action: "updateCurrentMission",
+          password,
+          deliveryDate: next.deliveryDate ?? deliveryDateIso,
+          city: next.city ?? city,
+          notice: next.notice ?? editableNotice,
+          mapImage: next.mapImage ?? embeddedMapImage,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!result.ok) {
+        throw new Error(result.error || "Failed to update current mission");
+      }
+
+      return true;
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : String(err));
       return false;
     }
-
-    return true;
   };
 
-  const changeDateWithPassword = (days: number) => {
-    if (!requestPassword()) return;
+  const changeDateWithPassword = async (days: number) => {
+    const next = new Date(targetDate);
+    next.setDate(next.getDate() + days);
+    const nextIso = formatIsoDate(next);
 
-    setTargetDate((prev) => {
-      const next = new Date(prev);
-      next.setDate(next.getDate() + days);
-      return next;
+    const ok = await updateCurrentMission({
+      deliveryDate: nextIso,
     });
+
+    if (ok) {
+      setTargetDate(next);
+    }
   };
 
-  const editNoticeWithPassword = () => {
-    if (!requestPassword()) return;
-
+  const editNoticeWithPassword = async () => {
     const next = window.prompt("Edit notice text", editableNotice);
     if (next === null) return;
 
-    setEditableNotice(next.trim() || DEFAULT_NOTICE);
+    const finalNotice = next.trim() || DEFAULT_NOTICE;
+
+    const ok = await updateCurrentMission({
+      notice: finalNotice,
+    });
+
+    if (ok) {
+      setEditableNotice(finalNotice);
+    }
   };
 
   const toggleVehicle = (type: string) => {
@@ -511,7 +595,6 @@ export default function DriverSignup() {
   };
 
   const resetForm = () => {
-    setCity(defaultCity);
     setDriverId("");
     setAvailability("available");
     setMaxLoad(DEFAULT_MAX_LOAD);
@@ -520,8 +603,6 @@ export default function DriverSignup() {
     setCoreRadius(DEFAULT_CORE_RADIUS);
     setExtendRadius(DEFAULT_EXTEND_RADIUS);
     setNotes("");
-    setTargetDate(initialTargetDate);
-    setEditableNotice(initialNotice);
     setSubmitted(false);
     setSubmitting(false);
   };
@@ -681,6 +762,18 @@ export default function DriverSignup() {
             <div style={{ fontSize: 22, fontWeight: 700, color: "#0f172a" }}>
               Driver Signup
             </div>
+
+            {missionLoading && (
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
+                Loading current mission...
+              </div>
+            )}
+
+            {!!missionError && (
+              <div style={{ fontSize: 12, color: "#dc2626", marginTop: 6 }}>
+                {missionError}
+              </div>
+            )}
           </div>
         </div>
 
