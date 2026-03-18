@@ -28,7 +28,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjPNyV20wbVIJ9
 /**
  * 管理员只需要改这几个常量
  */
-const MANUAL_DELIVERY_DATE = "2026-03-18";
+const MANUAL_DELIVERY_DATE = "2026-03-19";
 const MANUAL_NOTICE =
   "Please click the map to choose your area.";
 const DEFAULT_CITY: City = "Melbourne";
