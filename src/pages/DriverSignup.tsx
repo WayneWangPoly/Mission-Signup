@@ -23,29 +23,70 @@ type SignupPayload = {
   previewImage: string;
 };
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxjPNyV20wbVIJ9NofyQs9L9XPvnu7ing-eZ9qevApI8OO7HfcUPzgH_9k3pnus6XI7nQ/exec";
-
-/**
- * 管理员只需要改这几个常量
- */
-const MANUAL_DELIVERY_DATE = "2026-03-19";
-const MANUAL_NOTICE =
-  "Please click the map to choose your area.";
-const DEFAULT_CITY: City = "Melbourne";
-const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
+const APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 
 const cityList: City[] = ["Adelaide", "Melbourne", "Brisbane"];
 const vehicleOptions = ["Sedan", "Hatchback", "SUV", "Van", "Ute", "Other"];
 
+const DEFAULT_CITY: City = "Melbourne";
 const DEFAULT_MAX_LOAD = 200;
 const DEFAULT_CORE_RADIUS = 18;
 const DEFAULT_EXTEND_RADIUS = 34;
 const MIN_CORE_RADIUS = 8;
 const GAP_RADIUS = 10;
+const DEFAULT_NOTICE =
+  "Please check the reward colors carefully before choosing your area.";
+const DEFAULT_MAP_IMAGE = "/melbourne-task-base-map-v2.png";
+const MELBOURNE_TIME_ZONE = "Australia/Melbourne";
+const CUT_OFF_HOUR = 16;
+const CUT_OFF_MINUTE = 30;
 
-function getManualTargetDate(): Date {
-  const parsed = new Date(MANUAL_DELIVERY_DATE);
-  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+function getMelbourneNowParts() {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MELBOURNE_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const map: Record<string, string> = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      map[part.type] = part.value;
+    }
+  }
+
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+  };
+}
+
+function getMelbourneMissionIsoDate(): string {
+  const now = getMelbourneNowParts();
+
+  let utc = Date.UTC(now.year, now.month - 1, now.day);
+
+  if (
+    now.hour > CUT_OFF_HOUR ||
+    (now.hour === CUT_OFF_HOUR && now.minute >= CUT_OFF_MINUTE)
+  ) {
+    utc += 24 * 60 * 60 * 1000;
+  }
+
+  return new Date(utc).toISOString().slice(0, 10);
+}
+
+function getMelbourneMissionDate(): Date {
+  return new Date(`${getMelbourneMissionIsoDate()}T00:00:00`);
 }
 
 function formatBannerDate(date: Date): string {
@@ -82,11 +123,18 @@ function sanitizePoint(value: number): number {
   return Math.max(0, Math.min(100, value));
 }
 
-function NoticeTicker({ text }: { text: string }) {
+function NoticeTicker({
+  text,
+  onClick,
+}: {
+  text: string;
+  onClick: () => void;
+}) {
   const content = `${text}   •   ${text}   •   ${text}`;
 
   return (
     <div
+      onClick={onClick}
       style={{
         margin: "0 16px 16px",
         overflow: "hidden",
@@ -94,6 +142,7 @@ function NoticeTicker({ text }: { text: string }) {
         border: "1px solid #fcd34d",
         background: "#fcd34d",
         boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        cursor: "pointer",
       }}
     >
       <div
@@ -395,10 +444,7 @@ async function generateMapPreviewImage(
 }
 
 export default function DriverSignup() {
-  const targetDate = useMemo(() => getManualTargetDate(), []);
-  const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
-  const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
-
+  const [targetDate, setTargetDate] = useState<Date>(() => getMelbourneMissionDate());
   const [city, setCity] = useState<City>(DEFAULT_CITY);
   const [driverId, setDriverId] = useState("");
   const [availability, setAvailability] = useState<Availability>("available");
@@ -410,9 +456,28 @@ export default function DriverSignup() {
   const [notes, setNotes] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editableNotice, setEditableNotice] = useState(DEFAULT_NOTICE);
 
-  const editableNotice = MANUAL_NOTICE;
   const embeddedMapImage = DEFAULT_MAP_IMAGE;
+  const targetDateText = useMemo(() => formatBannerDate(targetDate), [targetDate]);
+  const deliveryDateIso = useMemo(() => formatIsoDate(targetDate), [targetDate]);
+
+  useEffect(() => {
+    const updateMissionDate = () => {
+      setTargetDate(getMelbourneMissionDate());
+    };
+
+    updateMissionDate();
+    const timer = window.setInterval(updateMissionDate, 60 * 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const editNoticeDirectly = () => {
+    const next = window.prompt("Edit notice text", editableNotice);
+    if (next === null) return;
+    setEditableNotice(next.trim() || DEFAULT_NOTICE);
+  };
 
   const toggleVehicle = (type: string) => {
     setVehicleTypes((prev) => {
@@ -628,7 +693,7 @@ export default function DriverSignup() {
           </div>
         </div>
 
-        <NoticeTicker text={editableNotice} />
+        <NoticeTicker text={editableNotice} onClick={editNoticeDirectly} />
 
         <div style={{ display: "grid", gap: 20, padding: 20 }}>
           <div>
